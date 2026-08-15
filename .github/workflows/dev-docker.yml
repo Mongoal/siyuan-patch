@@ -46,10 +46,22 @@ jobs:
         run: |
           git clone --branch ${{ github.event.inputs.branch }} --depth=1 https://github.com/siyuan-note/siyuan.git ${{ env.SIYUAN_DIR }}
           cd ${{ env.SIYUAN_DIR }}
-          git apply ${{ env.PATCH_DIR }}/patches/siyuan/disable-update.patch
-          git apply ${{ env.PATCH_DIR }}/patches/siyuan/default-config.patch
-          git apply ${{ env.PATCH_DIR }}/patches/siyuan/mock-vip-user.patch
-          git apply ${{ env.PATCH_DIR }}/patches/siyuan/mobile-bazaar.patch
+          # 核心补丁:失败即中止
+          for p in mock-vip-user mobile-bazaar; do
+            if git apply ${{ env.PATCH_DIR }}/patches/siyuan/$p.patch; then
+              echo "✅ $p applied"
+            else
+              echo "❌ $p 不适用于上游 ${{ github.event.inputs.branch }},需重新生成补丁"; exit 1
+            fi
+          done
+          # 体验类补丁:漂移时警告跳过
+          for p in disable-update default-config; do
+            if git apply ${{ env.PATCH_DIR }}/patches/siyuan/$p.patch; then
+              echo "✅ $p applied"
+            else
+              echo "⚠️ $p 跳过(与上游 ${{ github.event.inputs.branch }} 漂移,仅影响默认值)"
+            fi
+          done
           git status
 
       - name: Setup Docker buildx
