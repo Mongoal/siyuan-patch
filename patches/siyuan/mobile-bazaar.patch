@@ -1,0 +1,30 @@
+--- a/app/src/config/setting/tabs.ts
++++ b/app/src/config/setting/tabs.ts
+@@ -9,8 +9,9 @@
+ import {mountSyncTabExtras, patchSyncConfig} from "../tabs/syncRuntime";
+ import {mountAccessTab} from "../tabs/accessRuntime";
+ import {collectAssetsTabSearchStrings, mountAssetsTab} from "../assets";
+-/// #if !MOBILE
++// SELFBUILD: 集市在移动端同样可用
+ import {collectBazaarTabSearchStrings, mountBazaarTab} from "../bazaar";
++/// #if !MOBILE
+ import {collectKeymapTabSearchStrings, mountKeymapTab} from "../tabs/keymapUi";
+ /// #endif
+ import {isHuawei, isInHarmony} from "../../protyle/util/compatibility";
+@@ -48,7 +49,7 @@
+         title: () => window.siyuan.languages.appearance,
+         defaultSave: appearanceConfigApi.patch,
+     }, registerAppearanceTab),
+-    /// #if !MOBILE
++    // SELFBUILD: 移动端启用集市
+     bazaar: setting.panel({
+         id: "bazaar",
+         icon: "iconBazaar",
+@@ -57,7 +58,6 @@
+         searchStrings: collectBazaarTabSearchStrings,
+         mount: mountBazaarTab,
+     }),
+-    /// #endif
+     flashcard: setting.tab({
+         id: "flashcard",
+         icon: "iconRiffCard",

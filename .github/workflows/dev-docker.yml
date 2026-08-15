@@ -1,0 +1,84 @@
+name: dev-docker
+
+# 从上游 siyuan 任意分支(默认 dev)构建带补丁的 Docker 镜像,推 ghcr 公开包。
+# 与 dev-android 同源补丁,镜像与 APK 版本可保持一致。
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "上游 siyuan 分支或 tag"
+        required: true
+        default: "dev"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: mongoal/siyuan-patch
+  PATCH_DIR: ${{ github.workspace }}/patch
+  SIYUAN_DIR: ${{ github.workspace }}/siyuan
+
+jobs:
+  build:
+    name: docker image (dev)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - name: Checkout patch repo
+        uses: actions/checkout@v4
+        with:
+          path: patch
+
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Clone siyuan and apply patches
+        run: |
+          git clone --branch ${{ github.event.inputs.branch }} --depth=1 https://github.com/siyuan-note/siyuan.git ${{ env.SIYUAN_DIR }}
+          cd ${{ env.SIYUAN_DIR }}
+          git apply ${{ env.PATCH_DIR }}/patches/siyuan/disable-update.patch
+          git apply ${{ env.PATCH_DIR }}/patches/siyuan/default-config.patch
+          git apply ${{ env.PATCH_DIR }}/patches/siyuan/mock-vip-user.patch
+          git apply ${{ env.PATCH_DIR }}/patches/siyuan/mobile-bazaar.patch
+          git status
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ github.event.inputs.branch }}
+            type=sha,format=short
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.SIYUAN_DIR }}
+          file: ${{ env.SIYUAN_DIR }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

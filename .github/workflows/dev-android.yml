@@ -1,0 +1,176 @@
+name: dev-android
+
+# 从上游 siyuan 任意分支(默认 dev)构建带补丁的 Android APK。
+# 手动触发,产物为 Actions artifact,不发布 Release。
+# 签名:优先用 secrets 固定 keystore(与 siyuan-selfbuild 同源,可覆盖安装)。
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "上游 siyuan 分支或 tag"
+        required: true
+        default: "dev"
+
+env:
+  PATCH_DIR: ${{ github.workspace }}/patch
+  SIYUAN_DIR: ${{ github.workspace }}/siyuan
+  ANDROID_DIR: ${{ github.workspace }}/siyuan-android
+
+jobs:
+  build:
+    name: android arm64 apk (dev)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout patch repo
+        uses: actions/checkout@v4
+        with:
+          path: patch
+
+      - name: Clone siyuan and apply patches
+        run: |
+          git clone --branch ${{ github.event.inputs.branch }} --depth=1 https://github.com/siyuan-note/siyuan.git ${{ env.SIYUAN_DIR }}
+          cd ${{ env.SIYUAN_DIR }}
+          git apply ${{ env.PATCH_DIR }}/patches/siyuan/disable-update.patch
+          git apply ${{ env.PATCH_DIR }}/patches/siyuan/default-config.patch
+          git apply ${{ env.PATCH_DIR }}/patches/siyuan/mock-vip-user.patch
+          git apply ${{ env.PATCH_DIR }}/patches/siyuan/mobile-bazaar.patch
+          git status
+
+      - name: Clone siyuan-android
+        # dev 分支内核配 siyuan-android@main;CI 海外,删阿里云镜像走官方源
+        run: |
+          git clone --branch main --depth=1 https://github.com/siyuan-note/siyuan-android.git ${{ env.ANDROID_DIR }}
+          cd ${{ env.ANDROID_DIR }}
+          sed -i '/maven.aliyun.com/d' build.gradle
+          mkdir -p app/src/main/assets app/libs
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ${{ env.SIYUAN_DIR }}/kernel/go.mod
+          cache-dependency-path: ${{ env.SIYUAN_DIR }}/kernel/go.sum
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install -g $(node -e 'console.log(require("./package.json").packageManager)')
+        working-directory: ${{ env.SIYUAN_DIR }}/app
+
+      - name: Install Node Dependencies
+        run: pnpm install --no-frozen-lockfile
+        working-directory: ${{ env.SIYUAN_DIR }}/app
+
+      - name: Building UI
+        run: pnpm run build
+        working-directory: ${{ env.SIYUAN_DIR }}/app
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android NDK
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found under $ANDROID_HOME/cmdline-tools/"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;28.2.13676358" > /dev/null
+          NDK_DIR="$ANDROID_HOME/ndk/28.2.13676358"
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> $GITHUB_ENV
+
+      - name: Set up gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@2553ed8ce294
+          echo "$GOPATH/bin" >> $GITHUB_PATH
+          "$GOPATH/bin/gomobile" init
+        env:
+          GOPATH: ${{ github.workspace }}/go
+
+      - name: Building Android Kernel
+        run: gomobile bind -tags "fts5 sqlcipher" -ldflags "-s -w" -v -o kernel.aar -target android/arm64 -androidapi 26 ./mobile/
+        working-directory: ${{ env.SIYUAN_DIR }}/kernel
+        env:
+          GOPATH: ${{ github.workspace }}/go
+          CGO_ENABLED: 1
+          JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+
+      - name: Prepare Build Inputs
+        run: |
+          cp ${{ env.SIYUAN_DIR }}/kernel/kernel.aar ${{ env.ANDROID_DIR }}/app/libs/kernel.aar
+          cd ${{ env.SIYUAN_DIR }}/app
+          node scripts/trimChangelogs.js
+          zip -r app.zip appearance guide stage $([ -d changelogs ] && echo changelogs)
+          zip -j app.zip ../LICENSE ../THIRD_PARTY_NOTICES.md
+          cp app.zip ${{ env.ANDROID_DIR }}/app/src/main/assets/app.zip
+
+      - name: Prepare Signing Config
+        # app/build.gradle 无条件加载 signings.gradle。
+        # 优先固定 keystore(升级签名一致),否则临时生成并上传供固化。
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "==> 使用 secrets 中的固定 keystore"
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > app/siyuan-android.jks
+            KP="$ANDROID_KEYSTORE_PASSWORD"; KA="$ANDROID_KEY_ALIAS"; KPW="$ANDROID_KEY_PASSWORD"
+          else
+            echo "==> 未配置 secrets，生成临时 keystore"
+            keytool -genkeypair -v -keystore app/siyuan-android.jks -alias selfbuild \
+              -keyalg RSA -keysize 2048 -validity 10950 \
+              -storepass selfbuild123 -keypass selfbuild123 \
+              -dname "CN=siyuan-patch, OU=personal, O=self, L=NA, ST=NA, C=CN"
+            KP="selfbuild123"; KA="selfbuild"; KPW="selfbuild123"
+          fi
+          cat > signings.gradle <<EOF
+          android {
+            signingConfigs {
+              siyuanConfig {
+                storeFile file("siyuan-android.jks")
+                storePassword "$KP"
+                keyAlias "$KA"
+                keyPassword "$KPW"
+              }
+            }
+          }
+          EOF
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        working-directory: ${{ env.ANDROID_DIR }}
+
+      - name: Build APK
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          chmod +x ./gradlew
+          ./gradlew assembleOfficialRelease
+          VERSION=$(jq .version ${{ env.SIYUAN_DIR }}/app/package.json -r)
+          mv app/build/outputs/apk/official/release/siyuan-*-official-release.apk \
+             app/build/outputs/apk/official/release/siyuan-${VERSION}-${{ github.event.inputs.branch }}-arm64.apk
+        working-directory: ${{ env.ANDROID_DIR }}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: siyuan-patch-android-${{ github.event.inputs.branch }}
+          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/official/release/*.apk
+
+      - name: Upload Keystore (仅临时签名时)
+        if: ${{ !env.ANDROID_KEYSTORE_BASE64 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: siyuan-patch-keystore
+          path: ${{ env.ANDROID_DIR }}/app/siyuan-android.jks
