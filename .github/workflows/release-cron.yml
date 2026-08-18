@@ -1,8 +1,8 @@
 name: release-cron
 
+# SELFBUILD: 禁用定时触发——本 fork 走 dev-android/dev-docker 手动工作流,
+# 且 cron 需要 PERSONAL_ACCESS_TOKEN 才能 dispatch 其他 workflow,启用只会周期性失败。
 on:
-  schedule:
-    - cron: "0 12 * * 2,5" # 每周二和周五的12点（UTC时间）
   workflow_dispatch:
 
 jobs:
