@@ -21,6 +21,8 @@ jobs:
     name: android arm64 apk (dev)
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: write   # tag 构建时创建 Release 并上传 APK
 
     steps:
       - name: Checkout patch repo
@@ -180,3 +182,26 @@ jobs:
         with:
           name: siyuan-patch-android-${{ github.event.inputs.branch }}
           path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/official/release/*.apk
+
+      - name: Publish Release (仅 tag 构建时)
+        # branch 输入为 v* 时发布 Release,资产命名与 demoshang 一致,便于公共代理下载:
+        # https://github.tbap.top/https://github.com/<repo>/releases/download/<tag>/siyuan-v<x.y.z>-android-arm64.apk
+        if: startsWith(github.event.inputs.branch, 'v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ github.event.inputs.branch }}"
+          VERSION=$(jq .version ${{ env.SIYUAN_DIR }}/app/package.json -r)
+          ASSET="siyuan-v${VERSION}-android-arm64.apk"
+          cp ${{ env.ANDROID_DIR }}/app/build/outputs/apk/official/release/*.apk "/tmp/$ASSET"
+          ARGS=""
+          if echo "$BRANCH" | grep -qE 'beta|alpha|rc'; then ARGS="--prerelease"; fi
+          if gh release view "$BRANCH" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$BRANCH" "/tmp/$ASSET" --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$BRANCH" "/tmp/$ASSET" --title "SiYuan $BRANCH (patched)" \
+              --notes "自用补丁构建:第三方同步解锁 + 移动端集市
+          上游基线: siyuan-note/siyuan@$BRANCH
+          补丁: mock-vip-user / mobile-bazaar / disable-update / default-config" $ARGS -R "$GITHUB_REPOSITORY"
+          fi
+          echo "✅ Release 资产: https://github.com/$GITHUB_REPOSITORY/releases/download/$BRANCH/$ASSET"
