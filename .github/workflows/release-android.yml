@@ -35,7 +35,7 @@ jobs:
           git apply ${{ github.workspace }}/siyuan-note/patches/siyuan/disable-update.patch
           git apply ${{ github.workspace }}/siyuan-note/patches/siyuan/default-config.patch
           git apply ${{ github.workspace }}/siyuan-note/patches/siyuan/mock-vip-user.patch
-          git apply ${{ github.workspace }}/siyuan-note/patches/siyuan/mobile-bazaar.patch
+          # mobile-bazaar 已删除:3.8.2+ 上游原生支持移动端集市
 
           git status
 

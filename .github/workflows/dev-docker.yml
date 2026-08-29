@@ -46,8 +46,8 @@ jobs:
         run: |
           git clone --branch ${{ github.event.inputs.branch }} --depth=1 https://github.com/siyuan-note/siyuan.git ${{ env.SIYUAN_DIR }}
           cd ${{ env.SIYUAN_DIR }}
-          # 核心补丁:失败即中止
-          for p in mock-vip-user mobile-bazaar; do
+          # 核心补丁:失败即中止(mobile-bazaar 已删除:3.8.2+ 上游原生支持移动端集市)
+          for p in mock-vip-user; do
             if git apply ${{ env.PATCH_DIR }}/patches/siyuan/$p.patch; then
               echo "✅ $p applied"
             else
