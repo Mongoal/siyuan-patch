@@ -1,8 +1,8 @@
-diff --git forkSrcPrefix/kernel/api/setting.go forkDstPrefix/kernel/api/setting.go
-index edebd0d294b5673e4c5165712ccaa880cd1d9325..14c38fc3d5e0a0561fbcbc07885e4eb5b43ac906 100644
---- forkSrcPrefix/kernel/api/setting.go
-+++ forkDstPrefix/kernel/api/setting.go
-@@ -782,7 +782,7 @@ func getPublish(c *gin.Context) {
+diff --git a/kernel/api/setting.go b/kernel/api/setting.go
+index 4c805570f..7f16c8a13 100644
+--- a/kernel/api/setting.go
++++ b/kernel/api/setting.go
+@@ -1036,7 +1036,7 @@ func getPublish(c *gin.Context) {
  	}
  }
  
@@ -11,8 +11,8 @@ index edebd0d294b5673e4c5165712ccaa880cd1d9325..14c38fc3d5e0a0561fbcbc07885e4eb5
  	ret := gulu.Ret.NewResult()
  	defer c.JSON(http.StatusOK, ret)
  
-@@ -804,6 +804,48 @@ func getCloudUser(c *gin.Context) {
- 	ret.Data = model.Conf.GetUser()
+@@ -1069,6 +1069,49 @@ func getCloudUser(c *gin.Context) {
+ 	ret.Msg = model.Conf.Language(18)
  }
  
 +func getCloudUser(c *gin.Context) {
@@ -56,6 +56,7 @@ index edebd0d294b5673e4c5165712ccaa880cd1d9325..14c38fc3d5e0a0561fbcbc07885e4eb5
 +
 +	ret.Data = user
 +}
++
 +
  func logoutCloudUser(c *gin.Context) {
  	ret := gulu.Ret.NewResult()
