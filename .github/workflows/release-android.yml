@@ -29,22 +29,19 @@ jobs:
           mkdir -p ${{ github.workspace }}/go
           cd ${{ github.workspace }}/siyuan-note/
 
-          git clone --branch ${{ github.event.inputs.version }} --depth=1 https://github.com/siyuan-note/siyuan.git
+          git clone --branch ${{ github.event.inputs.version }} https://github.com/siyuan-note/siyuan.git
           cd siyuan
 
-          git apply ${{ github.workspace }}/siyuan-note/patches/siyuan/disable-update.patch
-          git apply ${{ github.workspace }}/siyuan-note/patches/siyuan/default-config.patch
-          git apply ${{ github.workspace }}/siyuan-note/patches/siyuan/mock-vip-user.patch
-          # mobile-bazaar 已删除:3.8.2+ 上游原生支持移动端集市
+          git apply --3way ${{ github.workspace }}/siyuan-note/patches/siyuan.patch
 
           git status
 
           cd ..
 
-          git clone --branch ${{ github.event.inputs.version }} --depth=1 https://github.com/siyuan-note/siyuan-android.git
+          git clone --branch ${{ github.event.inputs.version }} https://github.com/siyuan-note/siyuan-android.git
           cd siyuan-android
 
-          git apply ${{ github.workspace }}/siyuan-note/patches/siyuan-android/debug-build.patch
+          git apply --3way ${{ github.workspace }}/siyuan-note/patches/siyuan-android.patch
 
           mkdir -p app/src/main/assets/
           mkdir -p app/libs/
@@ -144,7 +141,7 @@ jobs:
 
       - name: Decode Keystore
         id: decode_keystore
-        uses: timheuer/base64-to-file@v1.2
+        uses: timheuer/base64-to-file@v2
         with:
           fileName: "debug.jks"
           fileDir: ${{ github.workspace }}/siyuan-note/siyuan-android/keystore
